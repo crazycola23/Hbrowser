@@ -1,0 +1,5 @@
+# 这个仓在 Windows 上开发：不锁行尾，第一次 `git add` 就会把 LF 改成 CRLF，
+# 之后在 Linux 容器里跑会撞出一堆与逻辑无关的红（OneGl 就踩过一次）。
+* text=auto eol=lf
+*.png binary
+*.jpg binary

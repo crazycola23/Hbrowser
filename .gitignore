@@ -1,0 +1,19 @@
+# 依赖与构建
+node_modules/
+
+# 运行时数据：profiles/ 里是每个账号的持久 Chromium profile，等价于平台账号的钥匙。
+# 这一行是这个仓最重要的忽略项 —— 一旦提交，仓库泄露就等于账号泄露。
+.data/
+data/
+*.storage.json
+*.storage.json.enc
+
+# 本机凭据（只提交 .env.example）
+.env
+.env.*
+!.env.example
+
+# 日志与临时
+*.log
+logs/
+tmp/

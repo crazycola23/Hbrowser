@@ -1,0 +1,19 @@
+{
+  "name": "geo-media-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GEO 自媒体发布执行面：每账号一个持久 Chromium profile，负责平台登录保持、页面填写与实时画面中继。",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.mjs",
+    "install:browsers": "playwright-core install chromium"
+  },
+  "dependencies": {
+    "playwright-core": "^1.51.1",
+    "ws": "^8.18.0"
+  }
+}
