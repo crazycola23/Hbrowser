@@ -10,7 +10,7 @@ import {
   listAccounts,
   loadLedger,
 } from './accounts.js';
-import { capabilities } from './adapters/index.js';
+import { capabilities, resolveAdapter } from './adapters/index.js';
 import { assertUsableConfig, config } from './config.js';
 import { inspectJob, jobView, startJob } from './jobs.js';
 import {
@@ -95,6 +95,32 @@ function baseOf(request) {
   return `${proto === 'https' ? 'wss' : 'ws'}://${host}/v1`;
 }
 
+/**
+ * 会话建立后导航到该去的页面。
+ *
+ * 登录会话去平台登录页，人工操作会话去作者后台首页（用户在子窗口里自己走到待确认的那篇）。
+ * 两条都不导航的话，操作员面对的是一个空白页，而"打不开"和"没内容"在画面上长得一样。
+ */
+async function navigateSession(session, accountId, purpose) {
+  const { platformCode } = accountView(accountId);
+  let adapter;
+  try {
+    adapter = resolveAdapter(platformCode);
+  } catch (error) {
+    // 未登记平台码（台账里没有这个号，或号是在适配器落地前登记的）回 422，
+    // 不给人一个带堆栈的 500。
+    throw badRequest(error.message ?? '该平台尚未接入');
+  }
+  const open = purpose === 'operate' ? adapter.openHome : adapter.openLogin;
+  try {
+    await open.call(adapter, session.page);
+  } catch (error) {
+    // 导航失败不留下"看起来已建立"的会话：profile 与登录态都在原地，关掉重来即可。
+    await closeSession(session.id).catch(() => {});
+    throw badRequest(`打不开 ${platformCode} 的页面：${error.message ?? error}`);
+  }
+}
+
 const routes = [
   {
     method: 'GET',
@@ -136,6 +162,9 @@ const routes = [
       const body = await readJson(request);
       const purpose = body.purpose === 'operate' ? 'operate' : 'login';
       const session = await openSession(params.accountId, purpose);
+      // 会话建立后必须自己走到该去的那一页。子窗口里没有地址栏，停在 about:blank
+      // 和用户说"打不开"是同一件事 —— 自助登录链就是这么断的（T-OPEN-33 复查第 6 条）。
+      await navigateSession(session, params.accountId, purpose);
       const view = {
         expiresAt: new Date(session.expiresAt).toISOString(),
         purpose: session.purpose,

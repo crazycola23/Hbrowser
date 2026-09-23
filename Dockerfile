@@ -8,7 +8,7 @@
 # revision 要正好是 playwright-core 期望的那个，否则 install:browsers 得在构建期重下。
 # 升级依赖后先确认 tag 存在：node -e "fetch('https://mcr.microsoft.com/v2/playwright/tags/list')
 #   .then(r=>r.json()).then(j=>console.log(j.tags.filter(t=>t.startsWith('v1.63.0-noble'))))"
-ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright
+ARG PLAYWRIGHT_IMAGE=m.daocloud.io/mcr.microsoft.com/playwright
 ARG PLAYWRIGHT_VERSION=v1.63.0-noble
 
 FROM ${PLAYWRIGHT_IMAGE}:${PLAYWRIGHT_VERSION}
@@ -18,7 +18,23 @@ LABEL maintainer="SCRM"
 # Xvfb：sessions.js 里 headless:false 是刻意的（内容平台对无头浏览器风控更严），
 # 所以容器里必须有显示服务。fonts-noto-cjk：缺中文字体时子窗口画面全是豆腐块，
 # 而操作员要在这块画面上读平台提示、自己点「发布」。
-RUN apt-get update \
+ARG APT_MIRROR=https://mirrors.aliyun.com/ubuntu
+
+# 主机名要带 `([a-z]+\.)*` 前缀：官方 ubuntu 镜像可能是 archive. / security. / **azure.archive.**
+# ubuntu.com，只匹配前两种时这条 sed 会静默不命中 —— 镜像看着换了、apt 还在原站，
+# 表现成"构建卡住"而不是报错。所以替换完必须断言真的改干净。
+RUN set -eu; \
+    for source in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do \
+      [ -f "$source" ] || continue; \
+      sed -i -E "s#https?://([a-z]+\.)*(archive|security)\.ubuntu\.com/ubuntu#${APT_MIRROR}#g" "$source"; \
+    done; \
+    if grep -rEq "https?://([a-z]+\.)*(archive|security)\.ubuntu\.com" \
+        /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then \
+      echo "apt 源替换未生效，仍指向官方站点：" >&2; \
+      grep -rE "ubuntu\.com" /etc/apt/sources.list /etc/apt/sources.list.d >&2 || true; \
+      exit 1; \
+    fi; \
+    apt-get update \
     && apt-get install -y --no-install-recommends xvfb fonts-noto-cjk fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 

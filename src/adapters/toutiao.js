@@ -1,34 +1,30 @@
 /**
- * 百家号适配器。
+ * 今日头条（头条号）适配器。
  *
- * ⚠ 本文件的 DOM 假设**全部未经实测**（T-OPEN-33 前置 P-2 五项事实都还没有答案）。
- * 它们被写成一张可整体替换的表，就是为了 spike 时只改这里：
- *   1. 作者后台登录页与发文页地址；
- *   2. 标题输入框、正文编辑器、封面与配图上传入口的选择器；
- *   3. 发布成功后可稳定取到的文章 URL 形态。
- * 选择器取不到时一律判 `page_changed` 并停住（需求 §十一），
- * 不猜第二个候选、不点"看起来像"的按钮 —— 平台改版时最坏的结果是重复发布出去一篇错稿。
+ * ⚠ 与百家号同一口径：入口里**只有登录页与作者后台是查证过的**
+ * （`https://mp.toutiao.com/auth/page/login/` 与 `https://mp.toutiao.com/profile_v4/`）。
+ * 发文编辑器地址、标题框与正文容器选择器**全部未实测**（T-OPEN-33 前置 P-2 五项事实）。
+ * 它们写成一张可整体替换的表，spike 时只改这里；取不到一律判 `page_changed` 停住，
+ * 不猜第二个候选 —— 平台改版时最坏的结果是重复发出去一篇错稿。
  */
 const ENTRY = {
-  home: 'https://baijiahao.baidu.com/',
-  login: 'https://baijiahao.baidu.com/',
-  // 图文发表入口。实际地址带动态参数，因此这里只作为导航起点，
-  // 真正的编辑器入口要靠页面上的按钮进入。
-  publish: 'https://baijiahao.baidu.com/builder/editor/content/edit/publish_type/article',
+  home: 'https://mp.toutiao.com/profile_v4/',
+  login: 'https://mp.toutiao.com/auth/page/login/',
+  // 未实测：发文入口。真机确认后只改这一行。
+  publish: 'https://mp.toutiao.com/profile_v4/graph-pub',
 };
 
 const SELECTORS = {
+  bodyEditor: '[contenteditable="true"], .ql-editor, .ProseMirror',
   coverUpload: 'input[type=file]',
+  // 未登录时页面上必然出现的登录入口（比 URL 更稳：登录墙有时不改地址）。
   loginEntry: 'text=登录',
   publishButton: 'text=发布',
   titleInput: 'input[placeholder*="标题"]',
-  // 百家号编辑器内核候选（未实测）。contenteditable 兜底是为了让 spike 能一眼看出
-  // 是"没有编辑器"还是"编辑器不是这个类名"。
-  bodyEditor: '[contenteditable="true"], .editor-content, .ql-editor',
 };
 
-export const baijiahaoAdapter = {
-  code: 'baijiahao',
+export const toutiaoAdapter = {
+  code: 'toutiao',
   implemented: true,
   modes: ['manual_confirm'],
   selectors: SELECTORS,
@@ -36,7 +32,7 @@ export const baijiahaoAdapter = {
   supportsLongBody: true,
 
   async openHome(page) {
-    await page.goto(ENTRY.home, { timeout: 45_000, waitUntil: 'domcontentloaded' });
+    await page.goto(ENTRY.home, { timeout: 60_000, waitUntil: 'domcontentloaded' });
   },
 
   async openLogin(page) {
@@ -48,10 +44,11 @@ export const baijiahaoAdapter = {
   },
 
   /**
-   * 填写一篇稿。
+   * 填一篇稿，填完就停（需求 §六 一期口径、N-10）。
    *
-   * 只填不发（需求 §六 一期口径）：填完停在编辑页等用户自己点「发布」。
-   * 返回页面上实际命中的入口数量，供作业记录留证。
+   * 正文注入前在页面上下文里再净化一遍：注入点位于**已登录的平台页面**内，
+   * 这是本项目最坏的 XSS 落点，不能把安全性寄托在"上游一定转义过"上。
+   * 逻辑必须整段写在 evaluate 里 —— 它在页面上下文执行，带不走 Node 侧的函数。
    */
   async fillArticle(page, { images = [], title, contentHtml }) {
     const filled = { cover: false, images: 0, text: false, title: false };
@@ -59,18 +56,12 @@ export const baijiahaoAdapter = {
     const titleLocator = page.locator(SELECTORS.titleInput).first();
     await requireFound(titleLocator, 'title_input');
     await titleLocator.click();
-    // 直接 fill 富文本平台的标题框比逐键打字稳：不会触发拼写联想浮层。
     await titleLocator.fill(title);
     filled.title = true;
 
     const body = page.locator(SELECTORS.bodyEditor).first();
     await requireFound(body, 'body_editor');
     await body.click();
-    // 正文只能整段注入：合成 keydown 打不进富文本编辑器，中文尤其如此。
-    // 注入点位于**已登录的平台页面**内，是本项目里最坏的 XSS 落点。载荷虽然已在 GEO 侧
-    // 经 MarkdownPublicationRenderer 转义，这里仍独立再净化一遍（DOMParser 解析 →
-    // 删危险节点 → 剥 on* 与 javascript:），不把安全性寄托在"上游一定没错"上。
-    // 净化逻辑必须整段写在 evaluate 里：它在页面上下文执行，带不走 Node 侧的函数。
     await body.evaluate((element, html) => {
       const forbidden = new Set([
         'BASE', 'EMBED', 'FORM', 'IFRAME', 'LINK', 'META', 'OBJECT', 'SCRIPT', 'STYLE',
@@ -108,7 +99,6 @@ export const baijiahaoAdapter = {
     if (images.length > 0) {
       const upload = page.locator(SELECTORS.coverUpload).first();
       if (await upload.count().catch(() => 0)) {
-        // setInputFiles 只吃本地路径，作业层已把 base64 落到临时文件。
         await upload.setInputFiles(images.map((image) => image.tempPath));
         filled.cover = true;
         filled.images = images.length;
@@ -120,23 +110,24 @@ export const baijiahaoAdapter = {
   },
 
   /**
-   * 平台侧是否已经真的发布出去。
-   *
-   * 只认两种确定证据：出现文章管理里的新条目，或 URL 变成带文章 id 的形态。
-   * 两者都没有时返回 unknown，让上层按"结果未知"落库（不判成功、不自动重发）。
+   * 只认确定证据：文章详情页 URL（`www.toutiao.com/article/<数字 id>/`）。
+   * 拿不到就返回 unknown，由 GEO 侧按"结果未知"落库且不给重试入口（N-06、GEO-42708）。
    */
   async inspectResult(page) {
-    const url = page.url();
-    const match = /https:\/\/baijiahao\.baidu\.com\/s\?id=\d+/.exec(url);
+    const match = /https:\/\/www\.toutiao\.com\/article\/\d+\//.exec(page.url());
     if (match) return { resultUrl: match[0], status: 'succeeded' };
     return { resultUrl: null, status: 'unknown' };
   },
 
-  /** 是否已经登录：只看有没有落到作者后台，不猜中间态。 */
+  /**
+   * 登录态判定：头条的登录墙会改地址，所以先看 URL 再兜底看页面上有没有登录入口。
+   * 判成"未登录"的代价只是让用户多扫一次码，判成"已登录"的代价是白跑一趟派发。
+   */
   async isLoggedIn(page) {
-    await page.goto(ENTRY.home, { timeout: 45_000, waitUntil: 'domcontentloaded' });
+    await this.openHome(page);
     const url = page.url();
-    if (/builder\/(pc)?[_-]?home|\/np\/biz-home/.test(url)) return true;
+    if (/\/auth\/|passport|login/i.test(url)) return false;
+    if (/profile_v4|mp\.toutiao\.com\/(home|profile)/.test(url)) return true;
     return !(await page.locator(SELECTORS.loginEntry).first().count().catch(() => 0));
   },
 };
@@ -144,7 +135,7 @@ export const baijiahaoAdapter = {
 async function requireFound(locator, slot) {
   const count = await locator.count().catch(() => 0);
   if (count > 0) return;
-  const error = new Error(`百家号页面缺少预期元素: ${slot}`);
+  const error = new Error(`今日头条页面缺少预期元素: ${slot}`);
   error.failClass = 'page_changed';
   throw error;
 }

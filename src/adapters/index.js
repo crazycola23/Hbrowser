@@ -6,9 +6,13 @@
  * + 在这里注册，不改状态机、不改表、不改页面。
  */
 import { baijiahaoAdapter } from './baijiahao.js';
+import { douyinAdapter } from './douyin.js';
+import { toutiaoAdapter } from './toutiao.js';
 
 const adapters = new Map(
-  [[baijiahaoAdapter.code, baijiahaoAdapter]].filter(([, adapter]) => adapter.implemented),
+  [baijiahaoAdapter, toutiaoAdapter, douyinAdapter]
+    .filter((adapter) => adapter.implemented)
+    .map((adapter) => [adapter.code, adapter]),
 );
 
 export const PLATFORM_CODES = ['baijiahao', 'toutiao', 'netease', 'douyin'];
@@ -25,6 +29,8 @@ export function capabilities() {
         implemented: Boolean(adapter),
         modes: adapter ? adapter.modes : [],
         supportsImageUpload: adapter ? adapter.supportsImageUpload : false,
+        // 抖音图文没有长正文容器，只有这个平台是 false；业务侧读这个布尔，不按平台码分支。
+        supportsLongBody: adapter ? adapter.supportsLongBody !== false : false,
       };
     }),
   };
