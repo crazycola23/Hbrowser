@@ -110,3 +110,19 @@ test('作业查询未知 id 回 404，不静默造一个"成功"', async () => {
   assert.equal(status, 404);
   assert.equal(payload.error, 'job_not_found');
 });
+
+test('账号注册平台与作业平台不一致时受理前就拒，且回 422 不是 500', async () => {
+  // 不拦住的话会拿百家号的 profile 去头条页面里操作 —— 那是"以某人身份在另一个平台点一下"。
+  // 这条断言同时保证拒绝发生在启动浏览器**之前**（否则本文件会挂住）。
+  const { payload, status } = await call('POST', `${base}/publish/jobs`, {
+    body: {
+      accountId: 'geo_sm_baijiahao_7001',
+      content: '<p>x</p>',
+      jobId: 'job_mismatch_probe',
+      platformCode: 'toutiao',
+      title: '错配探针',
+    },
+  });
+  assert.equal(status, 422, `实际 ${status}: ${JSON.stringify(payload)}`);
+  assert.match(payload.error, /平台不一致/);
+});

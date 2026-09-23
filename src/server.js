@@ -225,7 +225,15 @@ const routes = [
       if (!body.jobId || !body.accountId || !body.platformCode) {
         throw badRequest('jobId / accountId / platformCode 必填');
       }
-      const job = await startJob(body);
+      let job;
+      try {
+        job = await startJob(body);
+      } catch (error) {
+        // 受理**之前**的语义拒绝（平台未接入、账号与平台不匹配、模式不支持）是 422；
+        // 让它冒成 500 会让 GEO 把一次入队错配当成执行面故障去告警。
+        if (error.failClass === 'platform_rejected') throw badRequest(error.message);
+        throw error;
+      }
       return { jobId: job.jobId, sessionId: job.sessionId, status: job.status };
     },
   },

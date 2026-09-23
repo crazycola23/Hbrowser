@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { markLoginObserved, recordFailure } from './accounts.js';
+import { accountView, markLoginObserved, recordFailure } from './accounts.js';
 import { resolveAdapter } from './adapters/index.js';
 import { config } from './config.js';
 import { closeSession, openSession, serialize, sessionView } from './sessions.js';
@@ -106,6 +106,16 @@ async function download(rawUrl) {
 
 export async function startJob(request) {
   const adapter = resolveAdapter(request.platformCode);
+  // 账号↔平台互验：不判的话一次入队错配就会拿 A 平台的 profile 去 B 平台页面里操作，
+  // 那是"以某人身份在另一个平台点上一下"，比发布失败严重得多。
+  const { platformCode: registeredPlatform } = accountView(request.accountId);
+  if (registeredPlatform && registeredPlatform !== request.platformCode) {
+    const error = new Error(
+      `账号注册平台与作业平台不一致: ${registeredPlatform} != ${request.platformCode}`,
+    );
+    error.failClass = 'platform_rejected';
+    throw error;
+  }
   if (!adapter.modes.includes(request.mode ?? 'manual_confirm')) {
     const error = new Error(`该平台不支持 ${request.mode} 模式`);
     error.failClass = 'platform_rejected';
