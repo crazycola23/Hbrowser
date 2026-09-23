@@ -105,6 +105,11 @@ export async function deleteAccount(accountId) {
   return { accountId, reclaimed: value.reclaimSafe };
 }
 
+/**
+ * 台账视图。刻意**不返回 profilePresent**：那是磁盘事实，只能由 hasProfile() 探；
+ * 从 lastKnownGood 派生等于把"上次作业跑成功过"说成"profile 在不在"，
+ * 而 GEO 正是拿这个字段判"尚未登录"并把发布挡掉的。
+ */
 export function accountView(accountId) {
   const value = entry(accountId);
   const now = Date.now();
@@ -126,7 +131,6 @@ export function accountView(accountId) {
     dailyLimitUsed: daily,
     label: value.label ?? null,
     platformCode: value.platformCode ?? null,
-    profilePresent: Boolean(value.lastKnownGood),
     status,
   };
 }

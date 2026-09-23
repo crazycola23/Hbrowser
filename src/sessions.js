@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+import { accountView, markLoginObserved } from './accounts.js';
+import { resolveAdapter } from './adapters/index.js';
 import { config, paths } from './config.js';
 
 /**
@@ -16,6 +18,9 @@ import { config, paths } from './config.js';
 const sessions = new Map();
 const contexts = new Map();
 const chains = new Map();
+
+/** 登录态轮询间隔。太短会在平台页面上制造额外请求，太长则用户扫完码要干等。 */
+const LOGIN_POLL_MS = 2_500;
 
 function randomId(prefix) {
   return `${prefix}_${crypto.randomBytes(12).toString('hex')}`;
@@ -73,26 +78,31 @@ async function launchContext(accountId) {
  * `headless: false` 是刻意的：内容平台对无头浏览器的风控明显更严，
  * 而本服务的设计前提是"部署在有显示环境的服务器/容器里"（Xvfb 即可）。
  */
-export async function openSession(accountId, purpose = 'login') {
+export async function openSession(accountId, purpose = 'login', ttlMinutes) {
   const context = await launchContext(accountId);
   const page = context.pages()[0] ?? (await context.newPage());
   const cdp = await context.newCDPSession(page);
+  // 请求方给了 ttl 就用它（GEO 的会话行按同一时长算过期），没给才用服务默认值。
+  const minutes = Number.isInteger(ttlMinutes) && ttlMinutes > 0 ? ttlMinutes : config.sessionTtlMinutes;
   const session = {
     accountId,
     cdp,
     createdAt: Date.now(),
-    expiresAt: Date.now() + config.sessionTtlMinutes * 60_000,
+    expiresAt: Date.now() + minutes * 60_000,
     frame: null,
     id: randomId('sess'),
+    loginWatcher: null,
     page,
     purpose,
     status: 'starting',
     subscribers: new Set(),
+    ttlMinutes: minutes,
   };
   sessions.set(session.id, session);
 
   await cdp.send('Page.enable');
   await cdp.send('DOM.enable');
+  await cdp.send('Network.enable').catch(() => {});
   cdp.on('Page.screencastFrame', async (event) => {
     session.frame = event.metadata;
     for (const listener of session.subscribers) {
@@ -115,8 +125,84 @@ export async function openSession(accountId, purpose = 'login') {
       // 起不了画面中继不算会话失败：调用方仍可退回单帧截图。
     });
 
-  session.status = 'waiting_for_login';
+  // 人工操作会话不是"等人扫码"，别报成 waiting_for_login：GEO 的终态表里
+  // waiting_for_login 不是终态，报错了会让前端一直转。
+  session.status = purpose === 'login' ? 'waiting_for_login' : 'open';
+  if (purpose === 'login') startLoginWatcher(session);
   return session;
+}
+
+/**
+ * 登录态轮询：只看 cookie，不导航。
+ *
+ * 绝不在这里调 adapter.isLoggedIn() —— 那个方法会 goto 作者后台，
+ * 用户正在扫码时把页面跳走等于把二维码从他眼前撤掉。
+ * cookie 名未实测（前置 P-2），判不出来的兜底是人工确认入口 confirmLogin()。
+ */
+function startLoginWatcher(session) {
+  let adapter;
+  try {
+    adapter = resolveAdapter(accountView(session.accountId).platformCode);
+  } catch {
+    return;
+  }
+  if (!adapter?.loginCookies?.length) return;
+
+  const timer = setInterval(() => {
+    void probe();
+  }, LOGIN_POLL_MS);
+  timer.unref?.();
+  session.loginWatcher = timer;
+
+  async function probe() {
+    if (!sessions.has(session.id)) {
+      clearInterval(timer);
+      session.loginWatcher = null;
+      return;
+    }
+    try {
+      const { cookies = [] } = await session.cdp.send('Network.getCookies', {
+        urls: [adapter.homeUrl],
+      });
+      const present = new Set(cookies.map((cookie) => cookie.name));
+      if (!adapter.loginCookies.some((name) => present.has(name))) return;
+      markLoginObserved(session.accountId);
+      settleConnected(session);
+    } catch {
+      // 探测失败保持原状态：宁可让操作员多按一次"我已完成登录"，也不要误判已登录。
+    }
+  }
+}
+
+function settleConnected(session) {
+  session.status = 'connected';
+  if (session.loginWatcher) {
+    clearInterval(session.loginWatcher);
+    session.loginWatcher = null;
+  }
+}
+
+/**
+ * 人工确认登录已完成：这是自动判定的兜底，也是唯一会导航的登录判定。
+ *
+ * 判"已登录"的代价是下一次作业白跑一趟（那时会按 auth_expired 回写并挡住派发），
+ * 判"未登录"的代价只是用户再扫一次码 —— 两边都不至于发错东西出去。
+ */
+export async function confirmLogin(sessionId) {
+  const session = getSession(sessionId);
+  if (!session) {
+    const error = new Error('session_not_found');
+    error.status = 404;
+    throw error;
+  }
+  const adapter = resolveAdapter(accountView(session.accountId).platformCode);
+  const loggedIn = await adapter.isLoggedIn(session.page);
+  if (loggedIn) {
+    markLoginObserved(session.accountId);
+    settleConnected(session);
+  }
+  // 判"还没登录"时**不停轮询**：操作员往往就在下一步才扫完，撤掉监视等于让他再点一次。
+  return sessionView(session);
 }
 
 export function getSession(sessionId) {
@@ -186,6 +272,8 @@ export async function closeSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return false;
   sessions.delete(sessionId);
+  // 轮询必须跟着会话走：留着它会对一个已关的 CDP 通道不断发请求。
+  if (session.loginWatcher) clearInterval(session.loginWatcher);
   await session.cdp
     .send('Page.stopScreencast')
     .catch(() => {});

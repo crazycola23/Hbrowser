@@ -31,7 +31,10 @@ const SELECTORS = {
 
 export const douyinAdapter = {
   code: 'douyin',
+  homeUrl: ENTRY.home,
   implemented: true,
+  // ⚠ cookie 名未实测，判错只影响自动 connected，不影响人工确认那条路。
+  loginCookies: ['sessionid', 'session_ttw'],
   modes: ['manual_confirm'],
   selectors: SELECTORS,
   supportsImageUpload: true,

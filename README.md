@@ -38,9 +38,10 @@ GET    /v1/accounts                             账号台账（限速/冷却/是
 POST   /v1/accounts            {accountId,platformCode,label}
 GET    /v1/accounts/{id}/health                 登录态探测
 DELETE /v1/accounts/{id}                        软删：停派发 + 删 profile，保留台账行
-POST   /v1/accounts/{id}/sessions {purpose,ttlMinutes}   打开登录/接管会话，返回 bridge 描述
-GET    /v1/sessions/{id}                        会话状态
+POST   /v1/accounts/{id}/sessions {purpose,ttlMinutes}   打开登录/接管会话，建好即导航到该去的页面，返回 bridge 描述
+GET    /v1/sessions/{id}                        会话状态（同时回 bridge）
 GET    /v1/sessions/{id}/frame                  单帧 PNG（降级通道与首帧）
+POST   /v1/sessions/{id}/login-check            人工确认"我登录好了"：导航判定并回写台账
 POST   /v1/sessions/{id}/cancel                 关会话（不关 profile）
 POST   /v1/publish/jobs                         提交一次填写作业
 GET    /v1/publish/jobs/{id}                    作业状态

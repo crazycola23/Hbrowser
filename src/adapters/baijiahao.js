@@ -29,7 +29,11 @@ const SELECTORS = {
 
 export const baijiahaoAdapter = {
   code: 'baijiahao',
+  homeUrl: ENTRY.home,
   implemented: true,
+  // 登录判定用的百度主凭证 cookie。⚠ 名称未实测：判错的后果只是"自动 connected 不来"，
+  // 人工点「我已完成登录」那条路不依赖这张表（见 sessions.confirmLogin）。
+  loginCookies: ['BDUSS'],
   modes: ['manual_confirm'],
   selectors: SELECTORS,
   supportsImageUpload: true,

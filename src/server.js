@@ -17,6 +17,7 @@ import {
   bridgeFor,
   captureFrame,
   closeSession,
+  confirmLogin,
   dispatchInput,
   getSession,
   openSession,
@@ -144,11 +145,11 @@ const routes = [
   {
     method: 'GET',
     path: /^\/accounts\/(?<accountId>[^/]+)\/health$/,
-    handler: async (_request, params) => ({
-      ...(await hasProfile(params.accountId)
-        ? accountView(params.accountId)
-        : { ...accountView(params.accountId), profilePresent: false }),
-    }),
+    handler: async (_request, params) => {
+      // profilePresent 必须来自磁盘探测，不能用台账的 lastKnownGood 代替（见 accounts.accountView）。
+      const profilePresent = await hasProfile(params.accountId);
+      return { ...accountView(params.accountId), profilePresent };
+    },
   },
   {
     method: 'DELETE',
@@ -161,7 +162,7 @@ const routes = [
     handler: async (request, params) => {
       const body = await readJson(request);
       const purpose = body.purpose === 'operate' ? 'operate' : 'login';
-      const session = await openSession(params.accountId, purpose);
+      const session = await openSession(params.accountId, purpose, body.ttlMinutes);
       // 会话建立后必须自己走到该去的那一页。子窗口里没有地址栏，停在 about:blank
       // 和用户说"打不开"是同一件事 —— 自助登录链就是这么断的（T-OPEN-33 复查第 6 条）。
       await navigateSession(session, params.accountId, purpose);
@@ -204,6 +205,17 @@ const routes = [
     method: 'POST',
     path: /^\/sessions\/(?<sessionId>[^/]+)\/cancel$/,
     handler: async (_request, params) => ({ cancelled: await closeSession(params.sessionId) }),
+  },
+  {
+    /**
+     * 人工确认"我在画面里已经登录好了"。
+     *
+     * 自动判定靠 cookie 名（未实测），所以必须留这条确定性的路：否则登录成功与否
+     * 只能等下一次作业去撞，而作业又被"尚未登录"挡着 —— 账号会永久停在不可用。
+     */
+    method: 'POST',
+    path: /^\/sessions\/(?<sessionId>[^/]+)\/login-check$/,
+    handler: async (_request, params) => confirmLogin(params.sessionId),
   },
   {
     method: 'POST',
