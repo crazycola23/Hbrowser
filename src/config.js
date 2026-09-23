@@ -22,6 +22,10 @@ export const config = {
   contractVersion: 'geo-media-browser-v0.1',
   // 子窗口的实时画面依赖 CDP，只能是 Chromium。
   engine: 'chromium',
+  // 容器内以 root 跑时 Chromium 沙箱起不来（要 user namespaces 或 CAP_SYS_ADMIN）。
+  // 容器本身就是隔离边界，部署时用 GEO_BROWSER_CHROMIUM_SANDBOX=0 显式关掉；
+  // 默认保持 true，本机直接跑不改变原有行为。
+  chromiumSandbox: process.env.GEO_BROWSER_CHROMIUM_SANDBOX !== '0',
   // 两次动作之间的最小间隔。真实限速按账号计，见 safety 段。
   actionIntervalMs: integer('GEO_BROWSER_ACTION_INTERVAL_MS', 350),
   dataDir: process.env.GEO_BROWSER_DATA_DIR ?? path.join(ROOT, '.data'),

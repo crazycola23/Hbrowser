@@ -1,0 +1,23 @@
+# 构建上下文里绝不能出现的东西。
+#
+# .data/ 下是每个账号的持久 Chromium profile —— 等价于平台账号的钥匙。
+# 它一旦被 COPY 进镜像，任何能 pull 到这个镜像的人都能带走全部登录态，
+# 而且镜像层是删不掉的：事后重建也不等于没泄露过。
+.data/
+data/
+*.storage.json
+*.storage.json.enc
+
+.env
+.env.*
+!.env.example
+
+node_modules/
+.git/
+.gitignore
+.gitattributes
+*.log
+logs/
+tmp/
+Dockerfile
+.dockerignore

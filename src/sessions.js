@@ -47,6 +47,8 @@ async function launchContext(accountId) {
       '--no-default-browser-check',
     ],
     headless: false,
+    // 容器内以 root 跑时只能关沙箱，见 config.chromiumSandbox。
+    chromiumSandbox: config.chromiumSandbox,
     // 中文 IME 与平台编辑器的排版都依赖标准字体环境；容器里缺字体会让画面出现豆腐块。
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
