@@ -1,6 +1,6 @@
 # geo-media-browser · GEO 自媒体发布执行面
 
-仓库：`https://github.com/crazycola23/Hbrowser`（GitHub 仓名与目录/包名不同，属刻意的历史命名；代码里的 Provider 码仍是 `geo-media-browser`，GEO 侧配置 `geo.self-media.browser.*` 与之对应）。
+仓库：`https://github.com/crazycola23/geo-media-browser`（09-22 由 `Hbrowser` 改名而来，仓名 / 目录名 / 包名 / Provider 码现已一致；GEO 侧配置键为 `geo.self-media.browser.*`）。
 
 依据：`../scrm-specs/20-decisions/T-OPEN-33-自媒体账号运营与浏览器发布.md`。
 
